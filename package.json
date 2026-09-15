@@ -1,0 +1,28 @@
+{
+  "name": "afrirate-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for AfriRate — exchange rates, inflation and gold prices across 28 African countries.",
+  "license": "MIT",
+  "author": "StatoTech Systems",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "stdio": "tsx src/stdio.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

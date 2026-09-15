@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+
+# CLAUDE.md carries the generated StatoTech fleet block: every product, host,
+# domain and which ones take real money. This repo is public. The file stays on
+# disk for agents working here and never enters a commit.
+CLAUDE.md
+
+# PROGRESS.md is StatoTech's internal declared state, read by the spine's
+# gen-status.sh from disk. It names infrastructure and its weaknesses. Same
+# reason: stays local, never published.
+PROGRESS.md
