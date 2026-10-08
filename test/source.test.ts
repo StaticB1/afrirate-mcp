@@ -80,3 +80,36 @@ test('get_rate with a country and a pair returns only that pair', async () => {
   assert.match(reply.text, /\(1 pair\)/);
   assert.doesNotMatch(reply.text, /GBP/);
 });
+
+test('an invented currency code is named, with the real ones, instead of "no route"', async () => {
+  const stub = await startStub((target) => {
+    if (target.pathname.endsWith('/currencies')) {
+      return {
+        body: {
+          data: {
+            currencies: [
+              { code: 'USD', name: 'US Dollar', symbol: '$', decimals: 2 },
+              { code: 'ZWG', name: 'Zimbabwe Gold', symbol: 'ZiG', decimals: 2 },
+            ],
+          },
+          meta: { timestamp: new Date().toISOString() },
+        },
+      };
+    }
+    return { body: ratesEnvelope([]) };
+  });
+  const h = await harness({ AFRIRATE_API_BASE: stub.base });
+  after(async () => {
+    await h.close();
+    await stub.close();
+  });
+
+  // What a model sent for "Zimbabwe gold".
+  const watched = await h.call('watch_rate', { from: 'USD', to: 'ZAG', condition: 'above', value: 27 });
+  assert.equal(watched.isError, true);
+  assert.match(watched.text, /ZAG is not a currency AfriRate quotes/);
+  assert.match(watched.text, /ZWG \(Zimbabwe Gold\)/);
+
+  const converted = await h.call('convert', { amount: 1, from: 'USD', to: 'ZAG' });
+  assert.match(converted.text, /ZAG is not a currency/);
+});

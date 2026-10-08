@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { AfriRateError, type AfriRateClient } from '../afrirate.js';
 import { ageDays, ageNote, errorResult, textResult } from '../format.js';
-import { resolveRoute, type Route } from '../route.js';
+import { resolveRoute, unknownCurrencyHint, type Route } from '../route.js';
 import {
   MAX_WATCHES_PER_LIST,
   isListId,
@@ -141,6 +141,8 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
         return errorResult(`Could not read ${base}/${quote} to set the watch: ${describe(err)}. Nothing was saved.`);
       }
       if (!route) {
+        const hint = await unknownCurrencyHint(client, [base, quote]);
+        if (hint) return errorResult(`${hint} Nothing was saved.`);
         return errorResult(
           `No published route from ${base} to ${quote}${cc ? ` via ${cc} sources` : ''}, so there is nothing to watch.`,
         );

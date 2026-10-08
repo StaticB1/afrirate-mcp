@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AfriRateClient } from '../afrirate.js';
 import { ageDays, ageNote, errorResult, formatAmount, textResult } from '../format.js';
-import { resolveRoute } from '../route.js';
+import { resolveRoute, unknownCurrencyHint } from '../route.js';
 
 export function registerConvertTool(server: McpServer, client: AfriRateClient): void {
   server.registerTool(
@@ -65,6 +65,8 @@ export function registerConvertTool(server: McpServer, client: AfriRateClient): 
         }
       }
       if (!route) {
+        const hint = await unknownCurrencyHint(client, [base, quote]);
+        if (hint) return errorResult(hint);
         return errorResult(
           `No published route from ${base} to ${quote}${country ? ` via ${country.toUpperCase()} sources` : ''}. ` +
             'Try get_rate to see which pairs exist.',

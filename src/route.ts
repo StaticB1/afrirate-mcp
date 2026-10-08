@@ -95,6 +95,29 @@ async function resolveDirect(
 }
 
 /**
+ * When a route is not found, the commonest reason is a code the model
+ * invented — "Zimbabwe gold" sent as ZAG rather than ZWG. Returns a sentence
+ * naming the unknown codes and every code that does exist, so the caller can
+ * correct itself in one step; null when every code is real. The currency list
+ * is cached for hours, so this costs nothing in the usual case.
+ */
+export async function unknownCurrencyHint(client: AfriRateClient, codes: string[]): Promise<string | null> {
+  let known: { code: string; name: string }[];
+  try {
+    known = (await client.currencies()).data.currencies;
+  } catch {
+    return null;
+  }
+  const have = new Set(known.map((c) => c.code));
+  const unknown = codes.filter((c) => !have.has(c));
+  if (unknown.length === 0) return null;
+  return (
+    `${unknown.join(' and ')} ${unknown.length === 1 ? 'is not a currency' : 'are not currencies'} AfriRate quotes. ` +
+    `Known codes: ${known.map((c) => `${c.code} (${c.name})`).join(', ')}.`
+  );
+}
+
+/**
  * The best published route from one currency to another: direct, then inverse,
  * then a cross through USD. Undefined when nothing connects them. Upstream
  * errors — a throttle included — propagate, so a caller can tell "no such

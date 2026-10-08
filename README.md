@@ -32,6 +32,23 @@ curl -s https://mcp.afrirate.statotec.com/mcp \
 
 Running your own copy (below) needs an AfriRate API key.
 
+### On a simulated Alexa+ device
+
+`demo/` is a smart-display simulator: a microphone, a speaker, a screen of cards, and a voice
+assistant behind it with this MCP server attached as a remote tool. The model chooses which MCP
+tools to call; every number on screen came back through one of those calls, and the card says
+which. It keeps a watchlist id the way a device remembers its owner, so **☀ New day** starts a
+fresh conversation that opens with `check_watches`.
+
+```sh
+OPENAI_API_KEY=sk-... npm run demo      # then open http://127.0.0.1:4173
+```
+
+The assistant runs on OpenAI's Responses API, which connects to the MCP server itself over
+Streamable HTTP (`tools: [{ type: "mcp", server_url }]`). Speech in and out uses OpenAI's
+transcription and text-to-speech models. Set `MCP_URL` to point it at a local server instead of
+the hosted one. It binds to localhost because it holds your key.
+
 ## Tools
 
 | Tool | What it does |

@@ -32,7 +32,8 @@ export function createMcpServer(config: Config, client: AfriRateClient, store: W
       instructions:
         'AfriRate publishes exchange rates, inflation and central-bank gold prices for 28 African ' +
         'countries, scraped from central banks and market sources. Use list_countries to map a country ' +
-        'name to its ISO code before calling anything else. Every rate carries a `stale` flag: when it is ' +
+        'name to its ISO code, and list_currencies to map a currency name to its code (Zimbabwe Gold is ZWG), ' +
+        'before calling anything else. Every rate carries a `stale` flag: when it is ' +
         'true, the source has been failing and the number is the last one published — say so rather than ' +
         'presenting it as current. When the user wants to be told about a rate later, use watch_rate and ' +
         'give them the watchlist id it returns; it outlives this conversation. When the user has a watchlist ' +
