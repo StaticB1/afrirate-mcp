@@ -5,7 +5,8 @@ import { loadConfig } from './config.js';
 import { createMcpServer, SERVER_NAME, SERVER_VERSION } from './server.js';
 
 const config = loadConfig();
-const health = new AfriRateClient(config);
+// One client, one cache, for the life of the process. See server.ts.
+const client = new AfriRateClient(config);
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -20,7 +21,7 @@ function rpcError(res: ServerResponse, status: number, message: string): void {
 
 async function handleMcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // Stateless: a server and a transport per request, both torn down with it.
-  const server = createMcpServer(config);
+  const server = createMcpServer(config, client);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
   res.on('close', () => {
@@ -51,10 +52,19 @@ const httpServer = createServer((req, res) => {
   }
 
   if (url.pathname === '/healthz' && req.method === 'GET') {
-    void health
+    // Quota and cache figures ride along: the question behind "is it up" during
+    // judging is usually "have we got requests left", and that is unanswerable
+    // from the outside.
+    const base = {
+      server: SERVER_NAME,
+      version: SERVER_VERSION,
+      quota: client.quota(),
+      cache: client.cacheStats(),
+    };
+    void client
       .health()
-      .then(({ data }) => json(res, 200, { server: SERVER_NAME, version: SERVER_VERSION, upstream: data.status }))
-      .catch((err: Error) => json(res, 503, { server: SERVER_NAME, version: SERVER_VERSION, upstream: err.message }));
+      .then(({ data }) => json(res, 200, { ...base, upstream: data.status, quota: client.quota() }))
+      .catch((err: Error) => json(res, 503, { ...base, upstream: err.message, quota: client.quota() }));
     return;
   }
 

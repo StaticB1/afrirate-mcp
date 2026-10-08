@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AfriRateClient, Rate } from '../afrirate.js';
-import { bestRate, errorResult, formatAmount, textResult, toNumber } from '../format.js';
+import { ageDays, ageNote, bestRate, errorResult, formatAmount, textResult, toNumber } from '../format.js';
 
 /** One hop in a conversion: the row we used, and whether we read it backwards. */
 interface Leg {
@@ -13,6 +13,11 @@ interface Leg {
 /**
  * Rows for base→quote, optionally restricted to the sources of one country.
  * The country form returns every pair that country publishes, so we filter.
+ *
+ * Note that the country form asks for the identical URL on every leg — direct,
+ * inverse and both halves of a cross — so the client's cache collapses what
+ * used to be up to six upstream requests into one. Nothing here needs to know
+ * that; it is why this stayed simple.
  */
 async function pairRows(
   client: AfriRateClient,
@@ -63,7 +68,8 @@ export function registerConvertTool(server: McpServer, client: AfriRateClient): 
       description:
         'Convert an amount between two currencies using published African rates. Tries the direct pair, ' +
         'then the inverse, then a cross through USD, and tells you which path it used and which source it ' +
-        'trusted. No AfriRate endpoint does this — it is computed here.',
+        'trusted. No AfriRate endpoint does this — it is computed here. Passing `country` when you know it ' +
+        'costs one upstream request instead of up to six, which matters against a 10-per-minute budget.',
       inputSchema: {
         amount: z.number().positive().describe('Amount to convert'),
         from: z.string().min(3).max(3).describe('Currency to convert from, e.g. USD'),
@@ -85,6 +91,8 @@ export function registerConvertTool(server: McpServer, client: AfriRateClient): 
         stale: z.boolean(),
         sources: z.array(z.string()),
         as_of: z.string(),
+        /** Days since the oldest leg was observed. `stale` is scraper health; this is data age. */
+        age_days: z.number().nullable(),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
@@ -126,23 +134,34 @@ export function registerConvertTool(server: McpServer, client: AfriRateClient): 
       const sources = legs.map((leg) => leg.row.source);
       const asOf = legs.map((leg) => leg.row.rate_date).sort()[0]!;
 
+      // Every leg shows its own observation date. A cross-USD route can pair a
+      // rate from this morning with one from three weeks ago, and averaging
+      // those into a single "as of" hides exactly the thing a user would want
+      // to know before acting on the number.
       const detail = legs
-        .map((leg) =>
-          leg.inverted
-            ? `  ↳ ${leg.row.source}: 1 ${leg.row.base} = ${leg.row.rate} ${leg.row.quote}, read inverted`
-            : `  ↳ ${leg.row.source}: 1 ${leg.row.base} = ${leg.row.rate} ${leg.row.quote}`,
+        .map(
+          (leg) =>
+            `  ↳ ${leg.row.source}: 1 ${leg.row.base} = ${leg.row.rate} ${leg.row.quote}` +
+            `${leg.inverted ? ', read inverted' : ''} — ${leg.row.rate_date}${ageNote(leg.row.rate_date)}`,
         )
         .join('\n');
 
-      const warning = stale
+      const age = ageDays(asOf);
+      const staleWarning = stale
         ? '\n⚠ At least one source feeding this conversion is currently failing, so the figure is the last published value, not a fresh one.'
         : '';
+      const ageWarning =
+        age !== null && age >= 7
+          ? `\n⚠ The oldest leg of this conversion was published ${age} days ago. The source is not flagged as failing, ` +
+            'it simply has not moved its figure since — treat this as that day\'s rate, not today\'s.'
+          : '';
 
       const text =
         `${formatAmount(amount, base)} = ${formatAmount(result, quote)}\n` +
         `Rate used: 1 ${base} = ${rate.toPrecision(8)} ${quote} (${path}, as of ${asOf})\n` +
         detail +
-        warning;
+        staleWarning +
+        ageWarning;
 
       return textResult(text, {
         amount,
@@ -154,6 +173,7 @@ export function registerConvertTool(server: McpServer, client: AfriRateClient): 
         stale,
         sources,
         as_of: asOf,
+        age_days: age,
       });
     },
   );
