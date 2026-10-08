@@ -43,8 +43,29 @@ Running your own copy (below) needs an AfriRate API key.
 | `get_gold` | Central-bank gold-coin prices |
 | `convert` | Convert an amount, falling back through inverse and a USD cross |
 | `compare_corridor` | One pair across sources and countries, with the spread between them |
+| `watch_rate` | Remember a rate and a condition — above, below, or a % move — across conversations |
+| `check_watches` | What changed on a watchlist since it was set, and since the last check |
+| `remove_watch` | Drop one watch, or all of them |
 
-`convert` and `compare_corridor` are computed here — no AfriRate endpoint returns them.
+`convert`, `compare_corridor` and the watch tools are computed here — no AfriRate endpoint returns
+them.
+
+### Watchlists: state across conversations
+
+Ask *"tell me if the US dollar goes above 27 Zimbabwe gold"* and the agent calls `watch_rate`, which
+reads today's rate, stores the condition and returns a watchlist id such as `wl_k3x9p2m7qa`. In a
+later conversation — a day later, after a restart — `check_watches` with that id reports, for
+each watch, whether it fired, how far the rate has moved since it was set, and how far since the
+previous check.
+
+- **No accounts.** The id is the key, like an unlisted link. A list holds currency pairs and
+  thresholds and nothing about who asked.
+- **No push.** A watch fires when it is checked. The server instructions tell the agent to check
+  a user's watchlist at the start of a conversation and lead with anything that fired.
+- **A quiet source is not a steady rate.** When a source has published nothing since the last
+  check, `check_watches` says so instead of reporting a 0% move.
+- **Bounded.** Ten watches per list; lists unused for 90 days expire. One JSON file, written
+  atomically, under `AFRIRATE_STATE_DIR` (or systemd's `STATE_DIRECTORY`).
 
 ### Saying what we do not know
 
@@ -123,6 +144,7 @@ The API key this server holds is metered, and the tools are written to spend it 
 | `HOST` | `127.0.0.1` | Bind behind a reverse proxy, not directly |
 | `AFRIRATE_TIMEOUT_MS` | `10000` | Upstream request timeout |
 | `AFRIRATE_CACHE_TTL_MS` | `60000` | How long a rate response may be reused. `0` disables it. |
+| `AFRIRATE_STATE_DIR` | `./data` | Where watchlists are kept. `STATE_DIRECTORY` (set by systemd) also works |
 
 The API key is held server-side and never appears in a response, a log line or this repo.
 

@@ -20,6 +20,11 @@ export interface Config {
    * guess of ours. Set to 0 to disable caching of rates.
    */
   rateTtlMs: number;
+  /**
+   * Where watchlists are kept. systemd's StateDirectory= sets STATE_DIRECTORY,
+   * so the unit only has to declare one; locally it falls back to ./data.
+   */
+  stateDir: string;
 }
 
 const DEFAULT_API_BASE = 'https://afrirate.statotec.com/api/v1';
@@ -47,5 +52,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? '127.0.0.1',
     requestTimeoutMs: timeout,
     rateTtlMs: rateTtl,
+    stateDir: env.AFRIRATE_STATE_DIR || env.STATE_DIRECTORY || './data',
   };
 }

@@ -1,64 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AfriRateClient, Rate } from '../afrirate.js';
-import { ageDays, ageNote, bestRate, errorResult, formatAmount, textResult, toNumber } from '../format.js';
-
-/** One hop in a conversion: the row we used, and whether we read it backwards. */
-interface Leg {
-  row: Rate;
-  inverted: boolean;
-  factor: number;
-}
-
-/**
- * Rows for base→quote, optionally restricted to the sources of one country.
- * The country form returns every pair that country publishes, so we filter.
- *
- * Note that the country form asks for the identical URL on every leg — direct,
- * inverse and both halves of a cross — so the client's cache collapses what
- * used to be up to six upstream requests into one. Nothing here needs to know
- * that; it is why this stayed simple.
- */
-async function pairRows(
-  client: AfriRateClient,
-  base: string,
-  quote: string,
-  country?: string,
-): Promise<Rate[]> {
-  if (country) {
-    const { data } = await client.rates({ country });
-    return data.rates.filter((r) => r.base === base && r.quote === quote);
-  }
-  const { data } = await client.rates({ base, quote });
-  return data.rates;
-}
-
-function pick(rows: Rate[], source?: string): Rate | undefined {
-  const filtered = source ? rows.filter((r) => r.source.toLowerCase() === source.toLowerCase()) : rows;
-  return bestRate(filtered);
-}
-
-/** Direct, then inverse. Returns undefined rather than throwing so the caller can try a cross. */
-async function resolveDirect(
-  client: AfriRateClient,
-  from: string,
-  to: string,
-  opts: { country?: string; source?: string },
-): Promise<Leg | undefined> {
-  const direct = pick(await pairRows(client, from, to, opts.country), opts.source);
-  if (direct) {
-    const factor = toNumber(direct.rate);
-    if (factor !== null && factor > 0) return { row: direct, inverted: false, factor };
-  }
-
-  const inverse = pick(await pairRows(client, to, from, opts.country), opts.source);
-  if (inverse) {
-    const rate = toNumber(inverse.rate);
-    if (rate !== null && rate > 0) return { row: inverse, inverted: true, factor: 1 / rate };
-  }
-
-  return undefined;
-}
+import type { AfriRateClient } from '../afrirate.js';
+import { ageDays, ageNote, errorResult, formatAmount, textResult } from '../format.js';
+import { resolveRoute } from '../route.js';
 
 export function registerConvertTool(server: McpServer, client: AfriRateClient): void {
   server.registerTool(
@@ -104,35 +48,15 @@ export function registerConvertTool(server: McpServer, client: AfriRateClient): 
         return errorResult(`${base} and ${quote} are the same currency — nothing to convert.`);
       }
 
-      const opts = { country: country?.toUpperCase(), source };
-      const legs: Leg[] = [];
-      let path: 'direct' | 'inverse' | 'cross-usd';
-
-      const oneHop = await resolveDirect(client, base, quote, opts);
-      if (oneHop) {
-        legs.push(oneHop);
-        path = oneHop.inverted ? 'inverse' : 'direct';
-      } else {
-        // Nothing quotes this pair. Almost every African source quotes against
-        // USD, so a cross through it is the difference between an answer and a
-        // shrug.
-        const first = await resolveDirect(client, base, 'USD', opts);
-        const second = await resolveDirect(client, 'USD', quote, opts);
-        if (!first || !second) {
-          return errorResult(
-            `No published route from ${base} to ${quote}${country ? ` via ${country.toUpperCase()} sources` : ''}. ` +
-              'Try get_rate to see which pairs exist.',
-          );
-        }
-        legs.push(first, second);
-        path = 'cross-usd';
+      const route = await resolveRoute(client, base, quote, { country: country?.toUpperCase(), source });
+      if (!route) {
+        return errorResult(
+          `No published route from ${base} to ${quote}${country ? ` via ${country.toUpperCase()} sources` : ''}. ` +
+            'Try get_rate to see which pairs exist.',
+        );
       }
-
-      const rate = legs.reduce((acc, leg) => acc * leg.factor, 1);
+      const { legs, path, rate, stale, sources, asOf } = route;
       const result = amount * rate;
-      const stale = legs.some((leg) => leg.row.stale);
-      const sources = legs.map((leg) => leg.row.source);
-      const asOf = legs.map((leg) => leg.row.rate_date).sort()[0]!;
 
       // Every leg shows its own observation date. A cross-USD route can pair a
       // rate from this morning with one from three weeks ago, and averaging
