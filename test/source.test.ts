@@ -113,3 +113,30 @@ test('an invented currency code is named, with the real ones, instead of "no rou
   const converted = await h.call('convert', { amount: 1, from: 'USD', to: 'ZAG' });
   assert.match(converted.text, /ZAG is not a currency/);
 });
+
+test('get_rate for a pair the country does not publish lists what it does publish', async () => {
+  const stub = await startStub((target) => {
+    if (target.pathname.endsWith('/currencies')) {
+      return {
+        body: {
+          data: { currencies: [{ code: 'USD', name: 'US Dollar', symbol: '$', decimals: 2 }, { code: 'ZWG', name: 'Zimbabwe Gold', symbol: 'ZiG', decimals: 2 }] },
+          meta: { timestamp: new Date().toISOString() },
+        },
+      };
+    }
+    return { body: ratesEnvelope([rate({ source: 'rbz', base: 'USD', quote: 'ZWG', rate: '26.63' })], 'ZW') };
+  });
+  const h = await harness({ AFRIRATE_API_BASE: stub.base });
+  after(async () => {
+    await h.close();
+    await stub.close();
+  });
+
+  // What a model sent for "the official exchange rate in Zimbabwe": the retired ZWL.
+  const reply = await h.call('get_rate', { country: 'ZW', base: 'USD', quote: 'ZWL' });
+  assert.equal(reply.isError, false, reply.text);
+  assert.match(reply.text, /ZW publishes no USD\/ZWL rate/);
+  assert.match(reply.text, /ZWL is not a currency AfriRate quotes/);
+  assert.match(reply.text, /1 USD = 26.63 ZWG/);
+  assert.equal(reply.structured?.count, 1);
+});

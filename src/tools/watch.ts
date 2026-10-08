@@ -83,7 +83,8 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
         'it to the user and keep it, because check_watches needs it and it is the only key to the list. ' +
         'Pass an existing `watchlist` to add to it; omit it to start a new one. The rate is resolved the same ' +
         'way as convert (direct, inverse, cross through USD). There is no push notification: a watch fires ' +
-        'when check_watches is called and finds the condition holds.',
+        'when check_watches is called and finds the condition holds. To set several watches, set one first and pass ' +
+        'its watchlist id to the rest: calls made in parallel without an id each start a separate list.',
       inputSchema: {
         from: z.string().min(3).max(3).describe('Base currency, e.g. USD'),
         to: z.string().min(3).max(3).describe('Quote currency, e.g. ZWG'),
