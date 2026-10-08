@@ -15,7 +15,8 @@
     "dev": "tsx watch src/index.ts",
     "stdio": "tsx src/stdio.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "demo": "tsx demo/server.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
