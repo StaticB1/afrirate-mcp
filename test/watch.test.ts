@@ -50,7 +50,7 @@ test('a watch set in one conversation fires in the next, and says what moved sin
   after(() => stub.close());
 
   const first = await session(stub.base, dir);
-  const set = await first.call('watch_rate', { from: 'USD', to: 'ZWG', above: 27 });
+  const set = await first.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'above', value: 27 });
   await first.close();
 
   assert.equal(set.isError, false, set.text);
@@ -100,7 +100,7 @@ test('a source that published nothing new is reported as quiet, not as a flat ra
     await stub.close();
   });
 
-  const set = await h.call('watch_rate', { from: 'USD', to: 'ZWG', moves_pct: 2 });
+  const set = await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'moves_pct', value: 2 });
   assert.match(set.text, /last published 30 days ago/, 'an old baseline must be called out when the watch is set');
 
   const checked = await h.call('check_watches', { watchlist: set.structured?.watchlist as string });
@@ -120,7 +120,7 @@ test('moves_pct fires on a move either way', async () => {
     await stub.close();
   });
 
-  const id = (await h.call('watch_rate', { from: 'USD', to: 'ZWG', moves_pct: 3 })).structured?.watchlist as string;
+  const id = (await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'moves_pct', value: 3 })).structured?.watchlist as string;
 
   m.state.rate = '98';
   m.state.date = TODAY;
@@ -141,7 +141,7 @@ test('a throttled check reports the watch as unchecked and keeps its last readin
     await stub.close();
   });
 
-  const id = (await h.call('watch_rate', { from: 'USD', to: 'ZWG', above: 27 })).structured?.watchlist as string;
+  const id = (await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'above', value: 27 })).structured?.watchlist as string;
   const before = await readFile(join(dir, 'watches.json'), 'utf8');
 
   m.state.throttle = true;
@@ -167,12 +167,15 @@ test('bad input is refused before anything is saved', async () => {
     await stub.close();
   });
 
-  const two = await h.call('watch_rate', { from: 'USD', to: 'ZWG', above: 27, below: 25 });
-  assert.equal(two.isError, true);
-  assert.match(two.text, /exactly one condition/);
+  // What a model sends when it fills a schema with zeros.
+  const zero = await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'above', value: 0 });
+  assert.equal(zero.isError, true);
 
   const none = await h.call('watch_rate', { from: 'USD', to: 'ZWG' });
   assert.equal(none.isError, true);
+
+  const huge = await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'moves_pct', value: 250 });
+  assert.equal(huge.isError, true);
 
   const unknown = await h.call('check_watches', { watchlist: 'wl_aaaaaaaaaa' });
   assert.equal(unknown.isError, true);
@@ -181,7 +184,7 @@ test('bad input is refused before anything is saved', async () => {
   const nonsense = await h.call('check_watches', { watchlist: '../../etc/passwd' });
   assert.equal(nonsense.isError, true);
 
-  const noRoute = await h.call('watch_rate', { from: 'GBP', to: 'XOF', above: 1 });
+  const noRoute = await h.call('watch_rate', { from: 'GBP', to: 'XOF', condition: 'above', value: 1 });
   assert.equal(noRoute.isError, true);
   assert.equal(h.store.size, 0, 'no list is created for a watch that could not be set');
 });
@@ -195,18 +198,18 @@ test('a list holds at most ten watches, and remove_watch frees a slot', async ()
     await stub.close();
   });
 
-  const id = (await h.call('watch_rate', { from: 'USD', to: 'ZWG', above: 27 })).structured?.watchlist as string;
+  const id = (await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'above', value: 27 })).structured?.watchlist as string;
   for (let i = 0; i < 9; i++) {
-    const added = await h.call('watch_rate', { from: 'USD', to: 'ZWG', above: 28 + i, watchlist: id });
+    const added = await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'above', value: 28 + i, watchlist: id });
     assert.equal(added.isError, false, added.text);
   }
-  const full = await h.call('watch_rate', { from: 'USD', to: 'ZWG', above: 40, watchlist: id });
+  const full = await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'above', value: 40, watchlist: id });
   assert.equal(full.isError, true);
   assert.match(full.text, /already has 10 watches/);
 
   const removed = await h.call('remove_watch', { watchlist: id, watch_id: 'w3' });
   assert.deepEqual(removed.structured?.removed, ['w3']);
-  const added = await h.call('watch_rate', { from: 'USD', to: 'ZWG', above: 40, watchlist: id });
+  const added = await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'above', value: 40, watchlist: id });
   assert.equal(added.structured?.watch && (added.structured.watch as { id: string }).id, 'w11', 'ids are never reused');
 
   const cleared = await h.call('remove_watch', { watchlist: id, watch_id: 'all' });
@@ -224,7 +227,7 @@ test('a corrupt store file is refused, never silently replaced', async () => {
     await stub.close();
   });
 
-  const reply = await h.call('watch_rate', { from: 'USD', to: 'ZWG', above: 27 });
+  const reply = await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'above', value: 27 });
   assert.equal(reply.isError, true);
   assert.equal(await readFile(join(dir, 'watches.json'), 'utf8'), '{ not json');
 });

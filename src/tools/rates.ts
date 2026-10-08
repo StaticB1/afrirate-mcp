@@ -42,20 +42,30 @@ export function registerRateTools(server: McpServer, client: AfriRateClient): vo
         return errorResult('Provide either a country code, or both base and quote currency codes.');
       }
 
-      const { data, meta } = await client.rates({
+      const { data: all, meta } = await client.rates({
         country: country?.toUpperCase(),
         base: base?.toUpperCase(),
         quote: quote?.toUpperCase(),
       });
+      // The country form returns every pair the country publishes and ignores
+      // base/quote. When both were given the caller wants the one pair.
+      const b = base?.toUpperCase();
+      const q = quote?.toUpperCase();
+      const data =
+        country && (b || q)
+          ? { ...all, rates: all.rates.filter((r) => (!b || r.base === b) && (!q || r.quote === q)) }
+          : all;
 
       if (data.rates.length === 0) {
-        const asked = country ? `country ${country.toUpperCase()}` : `${base?.toUpperCase()}/${quote?.toUpperCase()}`;
+        const asked = country
+          ? `country ${country.toUpperCase()}${b || q ? ` (${b ?? '*'}/${q ?? '*'})` : ''}`
+          : `${b}/${q}`;
         return errorResult(`No rates published for ${asked}. Use list_countries to see what is covered.`);
       }
 
       const staleCount = data.rates.filter((r) => r.stale).length;
       const header = country
-        ? `Latest rates for ${country.toUpperCase()} (${data.rates.length} pairs):`
+        ? `Latest rates for ${country.toUpperCase()} (${data.rates.length} pair${data.rates.length === 1 ? '' : 's'}):`
         : `${base?.toUpperCase()}/${quote?.toUpperCase()} across ${data.rates.length} source${data.rates.length === 1 ? '' : 's'}:`;
       const footer = staleCount > 0 ? `\n\n${staleCount} of these come from a source that is currently failing.` : '';
 

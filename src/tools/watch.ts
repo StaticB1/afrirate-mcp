@@ -87,14 +87,14 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
       inputSchema: {
         from: z.string().min(3).max(3).describe('Base currency, e.g. USD'),
         to: z.string().min(3).max(3).describe('Quote currency, e.g. ZWG'),
-        above: z.number().positive().optional().describe('Fire when the rate rises above this level'),
-        below: z.number().positive().optional().describe('Fire when the rate falls below this level'),
-        moves_pct: z
-          .number()
-          .positive()
-          .max(100)
-          .optional()
-          .describe('Fire when the rate moves at least this many percent either way from today'),
+        // One condition and one value, not three optional numbers: a model
+        // filling a schema tends to send every optional number as 0, and
+        // "above 0, below 0, moves 0%" is a different watch from the one asked for.
+        condition: z
+          .enum(['above', 'below', 'moves_pct'])
+          .describe('above: fire when the rate rises above value. below: when it falls below value. ' +
+            'moves_pct: when it moves at least value percent either way from today.'),
+        value: z.number().positive().describe('The level (for above/below) or the percent (for moves_pct)'),
         country: z.string().length(2).optional().describe('Only use sources from this country, e.g. ZW'),
         watchlist: listIdSchema.optional(),
       },
@@ -109,20 +109,15 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ from, to, above, below, moves_pct, country, watchlist }) => {
+    async ({ from, to, condition: kind, value, country, watchlist }) => {
       const base = from.toUpperCase();
       const quote = to.toUpperCase();
       if (base === quote) return errorResult(`${base} and ${quote} are the same currency — nothing to watch.`);
 
-      const given = [
-        above !== undefined ? ({ kind: 'above', value: above } as const) : null,
-        below !== undefined ? ({ kind: 'below', value: below } as const) : null,
-        moves_pct !== undefined ? ({ kind: 'moves', value: moves_pct } as const) : null,
-      ].filter((c) => c !== null);
-      if (given.length !== 1) {
-        return errorResult('Give exactly one condition: above, below, or moves_pct.');
+      if (kind === 'moves_pct' && value > 100) {
+        return errorResult('moves_pct is a percentage; give a value of 100 or less.');
       }
-      const condition: Condition = given[0]!;
+      const condition: Condition = { kind: kind === 'moves_pct' ? 'moves' : kind, value };
 
       let list = watchlist ? await store.get(watchlist) : undefined;
       if (watchlist && !list) {
