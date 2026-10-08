@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AfriRateClient } from '../afrirate.js';
 import { errorResult, rateLine, textResult } from '../format.js';
+import { unknownCurrencyHint } from '../route.js';
 
 const rateShape = z.object({
   source: z.string(),
@@ -51,10 +52,13 @@ export function registerRateTools(server: McpServer, client: AfriRateClient): vo
       // base/quote. When both were given the caller wants the one pair.
       const b = base?.toUpperCase();
       const q = quote?.toUpperCase();
-      const data =
-        country && (b || q)
-          ? { ...all, rates: all.rates.filter((r) => (!b || r.base === b) && (!q || r.quote === q)) }
-          : all;
+      const narrowed =
+        country && (b || q) ? all.rates.filter((r) => (!b || r.base === b) && (!q || r.quote === q)) : all.rates;
+      // Asked for a pair the country does not publish — often a guessed code,
+      // ZWL for Zimbabwe's retired dollar rather than ZWG — answer with what it
+      // does publish instead of an empty error the model has to recover from.
+      const missedPair = country !== undefined && (b !== undefined || q !== undefined) && narrowed.length === 0;
+      const data = { ...all, rates: missedPair ? all.rates : narrowed };
 
       if (data.rates.length === 0) {
         const asked = country
@@ -64,8 +68,13 @@ export function registerRateTools(server: McpServer, client: AfriRateClient): vo
       }
 
       const staleCount = data.rates.filter((r) => r.stale).length;
+      const note = missedPair
+        ? `${country!.toUpperCase()} publishes no ${b ?? '*'}/${q ?? '*'} rate. ` +
+          `${(await unknownCurrencyHint(client, [b, q].filter((c): c is string => c !== undefined))) ?? ''}`.trim() +
+          ' Everything it does publish:\n'
+        : '';
       const header = country
-        ? `Latest rates for ${country.toUpperCase()} (${data.rates.length} pair${data.rates.length === 1 ? '' : 's'}):`
+        ? `${note}Latest rates for ${country.toUpperCase()} (${data.rates.length} pair${data.rates.length === 1 ? '' : 's'}):`
         : `${base?.toUpperCase()}/${quote?.toUpperCase()} across ${data.rates.length} source${data.rates.length === 1 ? '' : 's'}:`;
       const footer = staleCount > 0 ? `\n\n${staleCount} of these come from a source that is currently failing.` : '';
 

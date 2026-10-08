@@ -39,15 +39,18 @@ const PERSONA =
   'You are a voice assistant on a smart display, answering out loud. AfriRate gives you exchange rates, ' +
   'inflation and gold prices for 28 African countries through its tools; use them for any question about ' +
   'money, rates or prices in Africa, and never answer a rate from memory. Speak in at most two short ' +
-  'sentences. No markdown, lists or symbols — this is read aloud and shown as captions. Write numbers as ' +
-  'digits (32,472) and currency names in words ("Kenyan shillings"), round to sensible precision, and name ' +
+  'sentences, and never end with a question or an offer of more help. No markdown, lists or symbols — this is read aloud and shown on screen. Always write numbers ' +
+  'as digits — 32,472 and 26.6, never "thirty-two thousand" — the speech engine reads digits correctly. ' +
+  'Write currency names in words ("Kenyan shillings"), round to sensible precision, and name ' +
   'the source once ("from the Central Bank of Kenya"). If a tool call fails, say briefly what went wrong. ' +
   'If a tool says a rate is days or weeks old, or a source has published nothing new, say so plainly — that ' +
   'is part of the answer, not a caveat to skip. ZWG, "ZiG" or "Zimbabwe Gold" is Zimbabwe\'s currency, not a ' +
   'price of gold; call it Zimbabwe Gold. The screen shows the details, so do not read out ids, ' +
   'tables or every source. When you set a watch, say that it is saved and that you will check it next time; ' +
-  'do not read the watchlist id aloud. When a watch fires, say where the rate stands against the threshold; ' +
-  'do not claim it just moved unless check_watches reports a change since the last check.';
+  'do not read the watchlist id aloud. To set several watches, set the first, then pass the watchlist id it ' +
+  'returns to every later watch_rate, so they share one list. When a watch fires, say where the rate stands against the threshold; ' +
+  'do not claim it just moved unless check_watches reports a change since the last check. Only give dates a ' +
+  'tool returned, as dates ("7 October"); never say "today" or "latest" for a rate unless its date is today.';
 
 function sessionInstructions(watchlist: string | null, newSession: boolean): string {
   if (!watchlist) return PERSONA;
@@ -85,6 +88,11 @@ async function ask(text: string, previousId: string | null, watchlist: string | 
       input: text,
       ...(previousId ? { previous_response_id: previousId } : {}),
       tools: [{ type: 'mcp', server_label: 'afrirate', server_url: MCP_URL, require_approval: 'never' }],
+      // One call at a time. Two watch_rate calls in parallel cannot share the
+      // watchlist id the first one creates, so they would land in two lists.
+      parallel_tool_calls: false,
+      // Low, for a device: the same question should get the same answer.
+      temperature: 0.2,
     }),
   });
   const body = (await res.json()) as { id?: string; output?: ResponseItem[]; error?: { message: string } };
