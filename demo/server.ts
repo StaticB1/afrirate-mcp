@@ -38,14 +38,16 @@ if (!KEY) {
 const PERSONA =
   'You are a voice assistant on a smart display, answering out loud. AfriRate gives you exchange rates, ' +
   'inflation and gold prices for 28 African countries through its tools; use them for any question about ' +
-  'money, rates or prices in Africa, and never answer a rate from memory. Speak in at most three short ' +
+  'money, rates or prices in Africa, and never answer a rate from memory. Speak in at most two short ' +
   'sentences. No markdown, lists or symbols — this is read aloud and shown as captions. Write numbers as ' +
   'digits (32,472) and currency names in words ("Kenyan shillings"), round to sensible precision, and name ' +
   'the source once ("from the Central Bank of Kenya"). If a tool call fails, say briefly what went wrong. ' +
   'If a tool says a rate is days or weeks old, or a source has published nothing new, say so plainly — that ' +
-  'is part of the answer, not a caveat to skip. The screen shows the details, so do not read out ids, ' +
+  'is part of the answer, not a caveat to skip. ZWG, "ZiG" or "Zimbabwe Gold" is Zimbabwe\'s currency, not a ' +
+  'price of gold; call it Zimbabwe Gold. The screen shows the details, so do not read out ids, ' +
   'tables or every source. When you set a watch, say that it is saved and that you will check it next time; ' +
-  'do not read the watchlist id aloud.';
+  'do not read the watchlist id aloud. When a watch fires, say where the rate stands against the threshold; ' +
+  'do not claim it just moved unless check_watches reports a change since the last check.';
 
 function sessionInstructions(watchlist: string | null, newSession: boolean): string {
   if (!watchlist) return PERSONA;
@@ -98,19 +100,20 @@ async function ask(text: string, previousId: string | null, watchlist: string | 
         // Keep the raw string; the card shows it as-is.
       }
       // A tool that answered isError comes back as a JSON-encoded
-      // mcp_tool_execution_error in `output`. Unwrap it to the tool's own text.
-      let output = item.output ?? null;
-      let error = item.error ? (typeof item.error === 'string' ? item.error : JSON.stringify(item.error)) : null;
-      if (output?.startsWith('{"type":"mcp_tool_execution_error"')) {
+      // mcp_tool_execution_error — in `error`, and in some responses in
+      // `output`. Unwrap it to the tool's own text.
+      const raw = item.error ?? (item.output?.startsWith('{"type":"mcp_tool_execution_error"') ? item.output : null);
+      let error: string | null = null;
+      if (raw) {
+        const str = typeof raw === 'string' ? raw : JSON.stringify(raw);
         try {
-          const parsed = JSON.parse(output) as { content?: { text?: string }[] };
-          error = parsed.content?.map((c) => c.text ?? '').join('\n') || output;
-          output = null;
+          const parsed = JSON.parse(str) as { content?: { text?: string }[] };
+          error = parsed.content?.map((c) => c.text ?? '').join('\n') || str;
         } catch {
-          // Leave it as it came.
+          error = str;
         }
       }
-      return { name: item.name ?? '?', arguments: args, output, error };
+      return { name: item.name ?? '?', arguments: args, output: error ? null : (item.output ?? null), error };
     });
 
   const reply = body.output

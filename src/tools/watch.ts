@@ -165,6 +165,7 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
         baseline: reading,
         last: reading,
         fired_at: null,
+        held_when_set: holds(condition, route.rate, route.rate),
         created_at: now.toISOString(),
       };
       list.watches.push(watch);
@@ -224,6 +225,8 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
             holds: z.boolean(),
             /** True only on the check where the condition was first seen to hold. */
             newly_fired: z.boolean(),
+            /** The condition already held when the watch was set, so firing is not news of a move. */
+            held_when_set: z.boolean(),
             change_since_set_pct: z.number(),
             change_since_last_check_pct: z.number(),
             new_publication: z.boolean(),
@@ -288,6 +291,7 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
           age_days: ageDays(route.asOf),
           holds: holdsNow,
           newly_fired: newlyFired,
+          held_when_set: w.held_when_set === true,
           change_since_set_pct: pct(route.rate, w.baseline.rate),
           change_since_last_check_pct: pct(route.rate, w.last.rate),
           new_publication: route.asOf !== w.last.as_of,
@@ -310,8 +314,13 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
       ];
       for (const r of [...fired, ...results.filter((x) => !x.holds)]) {
         const w = r.watch;
+        const firedHow = r.held_when_set
+          ? ' — holds, as it already did when the watch was set (no move implied)'
+          : r.newly_fired
+            ? ' — fired: it has crossed since the watch was set'
+            : ' — still holds';
         const head = r.holds
-          ? `🔔 ${sayCondition(w.condition, w.from, w.to)}${r.newly_fired ? ' — fired for the first time' : ' — still holds'}`
+          ? `🔔 ${sayCondition(w.condition, w.from, w.to)}${firedHow}`
           : `• ${w.from}/${w.to} (${sayCondition(w.condition, w.from, w.to).replace(`${w.from}/${w.to} `, 'waiting until it ')})`;
         const move = r.new_publication
           ? `${signed(r.change_since_last_check_pct)} since the last check, ${signed(r.change_since_set_pct)} since set`

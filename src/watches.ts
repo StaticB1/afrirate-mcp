@@ -44,6 +44,12 @@ export interface Watch {
   last: Observation;
   /** First time the condition was seen to hold; null until then. */
   fired_at: string | null;
+  /**
+   * The condition already held at the moment the watch was set. When it then
+   * "fires", nothing moved — and saying it "just crossed" would be invented.
+   * Absent on watches stored before this field existed; read as false.
+   */
+  held_when_set?: boolean;
   created_at: string;
 }
 
