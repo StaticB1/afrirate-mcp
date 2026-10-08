@@ -7,12 +7,17 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { AfriRateClient } from '../src/afrirate.js';
 import { loadConfig, type Config } from '../src/config.js';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createMcpServer } from '../src/server.js';
+import { WatchStore } from '../src/watches.js';
 
 export interface Harness {
   call(name: string, args?: Record<string, unknown>): Promise<ToolReply>;
   api: AfriRateClient;
   config: Config;
+  store: WatchStore;
   close(): Promise<void>;
 }
 
@@ -23,9 +28,11 @@ export interface ToolReply {
 }
 
 export async function harness(env: Record<string, string>): Promise<Harness> {
-  const config = loadConfig({ AFRIRATE_MCP_API_KEY: 'test-key', ...env } as NodeJS.ProcessEnv);
+  const stateDir = env.AFRIRATE_STATE_DIR ?? (await mkdtemp(join(tmpdir(), 'afrirate-mcp-test-')));
+  const config = loadConfig({ AFRIRATE_MCP_API_KEY: 'test-key', ...env, AFRIRATE_STATE_DIR: stateDir } as NodeJS.ProcessEnv);
   const api = new AfriRateClient(config);
-  const server = createMcpServer(config, api);
+  const store = new WatchStore(config.stateDir);
+  const server = createMcpServer(config, api, store);
   const client = new Client({ name: 'test', version: '0.0.0' });
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -34,6 +41,7 @@ export async function harness(env: Record<string, string>): Promise<Harness> {
   return {
     api,
     config,
+    store,
     async call(name, args = {}) {
       const result = await client.callTool({ name, arguments: args });
       const content = (result.content ?? []) as { type: string; text?: string }[];

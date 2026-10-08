@@ -3,10 +3,12 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { AfriRateClient } from './afrirate.js';
 import { loadConfig } from './config.js';
 import { createMcpServer, SERVER_NAME, SERVER_VERSION } from './server.js';
+import { WatchStore } from './watches.js';
 
 const config = loadConfig();
 // One client, one cache, for the life of the process. See server.ts.
 const client = new AfriRateClient(config);
+const store = new WatchStore(config.stateDir);
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -21,7 +23,7 @@ function rpcError(res: ServerResponse, status: number, message: string): void {
 
 async function handleMcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // Stateless: a server and a transport per request, both torn down with it.
-  const server = createMcpServer(config, client);
+  const server = createMcpServer(config, client, store);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
   res.on('close', () => {

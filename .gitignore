@@ -2,6 +2,8 @@ node_modules/
 dist/
 .env
 .env.local
+# Watchlists written by a local run (AFRIRATE_STATE_DIR defaults to ./data).
+data/
 *.log
 
 # CLAUDE.md carries the generated StatoTech fleet block: every product, host,

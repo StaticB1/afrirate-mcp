@@ -6,7 +6,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { AfriRateClient } from './afrirate.js';
 import { loadConfig } from './config.js';
 import { createMcpServer } from './server.js';
+import { WatchStore } from './watches.js';
 
 const config = loadConfig();
-const server = createMcpServer(config, new AfriRateClient(config));
+const server = createMcpServer(config, new AfriRateClient(config), new WatchStore(config.stateDir));
 await server.connect(new StdioServerTransport());
