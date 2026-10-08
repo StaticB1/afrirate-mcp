@@ -79,7 +79,7 @@ test('a watch set in one conversation fires in the next, and says what moved sin
   assert.equal(r!.newly_fired, true);
   assert.equal(r!.new_publication, true);
   assert.ok(Math.abs(r!.change_since_last_check_pct - 2.2556) < 0.01, `got ${r!.change_since_last_check_pct}`);
-  assert.match(checked.text, /🔔 USD\/ZWG goes above 27 — fired for the first time/);
+  assert.match(checked.text, /🔔 USD\/ZWG goes above 27 — fired: it has crossed since the watch was set/);
 
   // A third look: still holds, but it is not news any more.
   const again = await second.call('check_watches', { watchlist: id });
@@ -230,4 +230,31 @@ test('a corrupt store file is refused, never silently replaced', async () => {
   const reply = await h.call('watch_rate', { from: 'USD', to: 'ZWG', condition: 'above', value: 27 });
   assert.equal(reply.isError, true);
   assert.equal(await readFile(join(dir, 'watches.json'), 'utf8'), '{ not json');
+});
+
+test('a condition that already held when set is not reported as a move', async () => {
+  const m = market({ rate: '129.9', date: TODAY });
+  const stub = await startStub((target) => {
+    const base = target.searchParams.get('base');
+    const quote = target.searchParams.get('quote');
+    if (base === 'USD' && quote === 'KES') {
+      return { body: ratesEnvelope([rate({ source: 'cbk', base: 'USD', quote: 'KES', rate: m.state.rate })]) };
+    }
+    return { body: ratesEnvelope([]) };
+  });
+  const h = await session(stub.base, await mkdtemp(join(tmpdir(), 'watch-')));
+  after(async () => {
+    await h.close();
+    await stub.close();
+  });
+
+  const set = await h.call('watch_rate', { from: 'USD', to: 'KES', condition: 'below', value: 130 });
+  assert.equal(set.structured?.already_holds, true);
+
+  const checked = await h.call('check_watches', { watchlist: set.structured?.watchlist as string });
+  const [r] = checked.structured?.results as { holds: boolean; held_when_set: boolean }[];
+  assert.equal(r!.holds, true);
+  assert.equal(r!.held_when_set, true);
+  assert.match(checked.text, /already did when the watch was set \(no move implied\)/);
+  assert.doesNotMatch(checked.text, /crossed/);
 });

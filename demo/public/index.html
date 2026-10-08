@@ -116,7 +116,7 @@
   .overlay .small { font-size: 18px; color: var(--muted); }
   .overlay code { color: var(--accent); font-size: 22px; }
   .caption {
-    position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
+    position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
     background: rgba(5,7,11,.85); border: 1px solid var(--card-edge); border-radius: 12px;
     padding: 8px 16px; font-size: 17px; color: #c6d0dd; display: none; max-width: 86%; text-align: center;
   }
@@ -139,6 +139,8 @@
   details { width: min(1040px, 100%); color: var(--muted); font-size: 14px; }
   details pre { white-space: pre-wrap; background: #0b0f15; border: 1px solid var(--card-edge); border-radius: 12px; padding: 12px; max-height: 320px; overflow: auto; }
   .recording .controls, .recording details { display: none; }
+  .recording { padding: 0; gap: 0; }
+  .recording .device { width: 1240px; padding: 10px 10px 14px; border-radius: 22px; }
 </style>
 </head>
 <body>
