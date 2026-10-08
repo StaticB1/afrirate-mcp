@@ -59,7 +59,7 @@ export function registerRateTools(server: McpServer, client: AfriRateClient): vo
         : `${base?.toUpperCase()}/${quote?.toUpperCase()} across ${data.rates.length} source${data.rates.length === 1 ? '' : 's'}:`;
       const footer = staleCount > 0 ? `\n\n${staleCount} of these come from a source that is currently failing.` : '';
 
-      return textResult([header, ...data.rates.map(rateLine)].join('\n') + footer, {
+      return textResult([header, ...data.rates.map((row) => rateLine(row))].join('\n') + footer, {
         country: data.country,
         count: data.rates.length,
         last_updated: meta.last_updated,
