@@ -23,7 +23,10 @@ export function registerConvertTool(server: McpServer, client: AfriRateClient): 
           .length(2)
           .optional()
           .describe('Restrict to sources from this country, e.g. ZW for the RBZ official rate'),
-        source: z.string().optional().describe('Restrict to one named source, e.g. RBZ'),
+        source: z
+          .string()
+          .optional()
+          .describe('Restrict to one source by its code as get_rate shows it, e.g. rbz or cbk. Usually leave this out.'),
       },
       outputSchema: {
         amount: z.number(),
@@ -49,6 +52,18 @@ export function registerConvertTool(server: McpServer, client: AfriRateClient): 
       }
 
       const route = await resolveRoute(client, base, quote, { country: country?.toUpperCase(), source });
+      if (!route && source) {
+        // The restriction may be what failed, not the pair. Saying "no route"
+        // when a route exists through another source sends the agent away
+        // from an answer it could have had.
+        const any = await resolveRoute(client, base, quote, { country: country?.toUpperCase() });
+        if (any) {
+          return errorResult(
+            `No source matching "${source}" publishes ${base}/${quote}. It is published by ` +
+              `${[...new Set(any.sources)].join(', ')} — pass that as source, or leave source out.`,
+          );
+        }
+      }
       if (!route) {
         return errorResult(
           `No published route from ${base} to ${quote}${country ? ` via ${country.toUpperCase()} sources` : ''}. ` +

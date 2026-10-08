@@ -47,8 +47,28 @@ async function pairRows(
   return data.rates;
 }
 
+const STOPWORDS = new Set(['of', 'the', 'and', 'de', 'du', 'la']);
+
+/**
+ * Does `asked` name this source? Sources are short codes (`cbk`, `rbz`,
+ * `sarb`), but a model asked about "the Central Bank of Kenya" passes the
+ * name. Initials cover nearly every central bank — with and without the small
+ * words, because "Bank of Botswana" is `bob` while "Reserve Bank of Zimbabwe"
+ * is `rbz`.
+ */
+export function sourceMatches(code: string, asked: string): boolean {
+  const c = code.toLowerCase();
+  const a = asked.toLowerCase().trim();
+  if (a === c) return true;
+  const words = a.split(/[^a-z]+/).filter(Boolean);
+  if (words.length < 2) return false;
+  const all = words.map((w) => w[0]).join('');
+  const content = words.filter((w) => !STOPWORDS.has(w)).map((w) => w[0]).join('');
+  return c === all || c === content;
+}
+
 function pick(rows: Rate[], source?: string): Rate | undefined {
-  const filtered = source ? rows.filter((r) => r.source.toLowerCase() === source.toLowerCase()) : rows;
+  const filtered = source ? rows.filter((r) => sourceMatches(r.source, source)) : rows;
   return bestRate(filtered);
 }
 
