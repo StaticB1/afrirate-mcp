@@ -53,6 +53,9 @@ device remembers its owner, so **☀ New day** starts a fresh conversation that 
 OPENAI_API_KEY=sk-... npm run demo      # then open http://127.0.0.1:4173
 ```
 
+Without a key the device is a keyless caller like any other: 10 tool calls a minute and 300 a day
+from your IP. Set `AFRIRATE_KEY=ar_…` to send your own AfriRate key and be served on your plan.
+
 The model is OpenAI's `gpt-4.1-mini` through the Responses API. Speech in and out uses OpenAI's
 transcription and text-to-speech models. Set `MCP_URL` to point it at a local server instead of the
 hosted one. It binds to localhost because it holds your key.

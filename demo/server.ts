@@ -82,7 +82,15 @@ const mcp = new Client(
   // Tell the server this host renders MCP Apps views.
   { capabilities: { extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME_TYPE] } } } } as never,
 );
-await mcp.connect(new StreamableHTTPClientTransport(new URL(MCP_URL)));
+// Keyless callers get the AfriRate Free plan's volume per IP. With a key of
+// your own the server meters it on your plan instead, so a long session or a
+// recording never runs into the shared allowance.
+const AFRIRATE_KEY = process.env.AFRIRATE_KEY;
+await mcp.connect(
+  new StreamableHTTPClientTransport(new URL(MCP_URL), {
+    ...(AFRIRATE_KEY ? { requestInit: { headers: { authorization: `Bearer ${AFRIRATE_KEY}` } } } : {}),
+  }),
+);
 const tools: Tool[] = (await mcp.listTools()).tools;
 const toolByName = new Map(tools.map((t) => [t.name, t]));
 
@@ -348,7 +356,8 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(
     `Alexa+ simulator for AfriRate MCP: http://${HOST}:${PORT}  (MCP: ${MCP_URL}, ${tools.length} tools, ` +
-      `${tools.filter((t) => viewOf(t)).length} with MCP Apps views, model: ${MODEL})`,
+      `${tools.filter((t) => viewOf(t)).length} with MCP Apps views, model: ${MODEL}, ` +
+      `${AFRIRATE_KEY ? 'your AfriRate key' : 'keyless (Free-plan volume per IP)'})`,
   );
 });
 
