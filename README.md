@@ -190,7 +190,7 @@ The API key this server holds is metered, and the tools are written to spend it 
 `GET /healthz` reports what is left:
 
 ```json
-{ "quota": { "limit": 10, "remaining": 6, "resetAt": "..." },
+{ "quota": { "limit": 1000, "remaining": 996, "resetAt": "..." },
   "cache": { "hits": 1, "misses": 1, "coalesced": 0, "entries": 1 } }
 ```
 
