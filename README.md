@@ -18,9 +18,16 @@ A hosted instance is running at:
 https://mcp.afrirate.statotec.com/mcp
 ```
 
-Point any MCP client that speaks Streamable HTTP at it. The API key it needs is held on the
-server, so there is nothing to sign up for. `GET https://mcp.afrirate.statotec.com/healthz` shows
-whether it is up and how much of the upstream request quota is left.
+Point any MCP client that speaks Streamable HTTP at it. There is nothing to sign up for:
+without a key, each IP address gets the AfriRate Free plan's volume, **10 tool calls a minute and
+300 a day**. Setup messages such as `initialize` and `tools/list` are not counted.
+
+**For more, use your own AfriRate key.** Send it as `Authorization: Bearer ar_…` and the server
+answers on that key, so your plan's limits apply and the usage shows on your AfriRate account. Keys,
+including a free one, are at [afrirate.statotec.com/pricing](https://afrirate.statotec.com/pricing).
+
+`GET https://mcp.afrirate.statotec.com/healthz` shows whether it is up and the server's own upstream
+quota.
 
 From the command line — the server is stateless, so a single request needs no session:
 

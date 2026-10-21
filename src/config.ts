@@ -11,6 +11,14 @@ export interface Config {
   apiBase: string;
   /** Unlimited-tier key minted in AfriRate admin. Absent = only the free endpoints work. */
   apiKey?: string;
+  /**
+   * Whose key `apiKey` is. 'caller' when a request brought its own AfriRate key,
+   * so upstream errors can say "your key" rather than blaming this server.
+   */
+  keyOwner?: 'server' | 'caller';
+  /** Keyless callers' allowance per IP, in tool calls. Defaults match AfriRate's Free plan. */
+  freePerMinute: number;
+  freePerDay: number;
   port: number;
   host: string;
   requestTimeoutMs: number;
@@ -45,9 +53,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`AFRIRATE_CACHE_TTL_MS must be zero or a positive number, got '${env.AFRIRATE_CACHE_TTL_MS}'`);
   }
 
+  const freePerMinute = Number(env.AFRIRATE_MCP_FREE_PER_MINUTE ?? 10);
+  const freePerDay = Number(env.AFRIRATE_MCP_FREE_PER_DAY ?? 300);
+  for (const [name, value] of [['AFRIRATE_MCP_FREE_PER_MINUTE', freePerMinute], ['AFRIRATE_MCP_FREE_PER_DAY', freePerDay]] as const) {
+    if (!Number.isInteger(value) || value < 0) throw new Error(`${name} must be a whole number, got '${env[name]}'`);
+  }
+
   return {
     apiBase: (env.AFRIRATE_API_BASE ?? DEFAULT_API_BASE).replace(/\/+$/, ''),
     apiKey: env.AFRIRATE_MCP_API_KEY || undefined,
+    keyOwner: 'server',
+    freePerMinute,
+    freePerDay,
     port,
     host: env.HOST ?? '127.0.0.1',
     requestTimeoutMs: timeout,

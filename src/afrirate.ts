@@ -214,7 +214,8 @@ export class AfriRateClient {
         const retryAfterSec = Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : fromReset;
         const limit = this.lastQuota?.limit;
         throw new AfriRateError(
-          `AfriRate rate limit reached${limit ? ` (${limit} requests/minute)` : ''}` +
+          `AfriRate rate limit reached${this.config.keyOwner === 'caller' ? ' on your API key' : ''}` +
+            `${limit ? ` (${limit} requests/minute)` : ''}` +
             `${retryAfterSec === undefined ? '' : `, retry in ${retryAfterSec}s`}`,
           429,
           'rate_limited',
@@ -222,12 +223,14 @@ export class AfriRateClient {
         );
       }
 
-      // 401 here means our own key is missing or wrong, not the caller's fault.
-      // Say which, because "unauthorized" sent to an agent is unactionable.
+      // 401 means a key is missing or wrong: ours, unless the caller brought
+      // their own. Say which, because "unauthorized" sent to an agent is unactionable.
       const hint =
-        response.status === 401 && !this.config.apiKey
-          ? 'this server has no AFRIRATE_MCP_API_KEY configured'
-          : (error?.message ?? response.statusText);
+        response.status === 401 && this.config.keyOwner === 'caller'
+          ? 'AfriRate rejected your API key: check it is active at https://afrirate.statotec.com/dashboard'
+          : response.status === 401 && !this.config.apiKey
+            ? 'this server has no AFRIRATE_MCP_API_KEY configured'
+            : (error?.message ?? response.statusText);
       throw new AfriRateError(hint, response.status, error?.code ?? 'upstream_error');
     }
 
