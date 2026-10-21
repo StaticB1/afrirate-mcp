@@ -10,10 +10,16 @@
 
 const KEY_RE = /^ar_[0-9a-f]{32}$/;
 
-/** The caller's own AfriRate key from `Authorization: Bearer ar_…`, if they sent one. */
-export function callerKey(authorization: string | undefined): string | undefined {
+/**
+ * The caller's own AfriRate key: `Authorization: Bearer ar_…`, or `?api_key=ar_…`
+ * on the URL for clients that cannot set headers (claude.ai and ChatGPT
+ * connectors), the same two forms the AfriRate REST API accepts. The header wins.
+ */
+export function callerKey(authorization: string | undefined, query?: URLSearchParams): string | undefined {
   const m = /^Bearer\s+(\S+)$/i.exec(authorization?.trim() ?? '');
-  return m && KEY_RE.test(m[1]!) ? m[1] : undefined;
+  if (m && KEY_RE.test(m[1]!)) return m[1];
+  const fromQuery = query?.get('api_key')?.trim();
+  return fromQuery && KEY_RE.test(fromQuery) ? fromQuery : undefined;
 }
 
 /**

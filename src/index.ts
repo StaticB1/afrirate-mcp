@@ -35,7 +35,7 @@ function rpcError(res: ServerResponse, status: number, message: string): void {
   json(res, status, { jsonrpc: '2.0', error: { code: -32000, message }, id: null });
 }
 
-async function handleMcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleMcp(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   let body: unknown;
   try {
     body = await readJson(req);
@@ -46,7 +46,7 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse): Promise<voi
 
   // A caller's own key: served on it, so AfriRate applies and meters their plan.
   // No key: the shared client, inside the keyless allowance. See access.ts.
-  const key = callerKey(req.headers.authorization);
+  const key = callerKey(req.headers.authorization, url.searchParams);
   let api = client;
   if (key) {
     // A fresh client and cache per request, so every upstream call is on their key.
@@ -86,7 +86,7 @@ const httpServer = createServer((req, res) => {
 
   if (url.pathname === '/mcp') {
     if (req.method === 'POST') {
-      void handleMcp(req, res);
+      void handleMcp(req, res, url);
       return;
     }
     // Stateless mode has no stream to resume and no session to delete.

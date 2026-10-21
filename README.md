@@ -22,8 +22,11 @@ Point any MCP client that speaks Streamable HTTP at it. There is nothing to sign
 without a key, each IP address gets the AfriRate Free plan's volume, **10 tool calls a minute and
 300 a day**. Setup messages such as `initialize` and `tools/list` are not counted.
 
-**For more, use your own AfriRate key.** Send it as `Authorization: Bearer ar_…` and the server
-answers on that key, so your plan's limits apply and the usage shows on your AfriRate account. Keys,
+**For more, use your own AfriRate key.** Send it as `Authorization: Bearer ar_…`, or, for clients
+that cannot set headers (claude.ai and ChatGPT connectors), put it on the URL:
+`https://mcp.afrirate.statotec.com/mcp?api_key=ar_…`. The server answers on that key, so your plan's
+limits apply and the usage shows on your AfriRate account. A key on a URL ends up in logs, so use one
+you can revoke. Keys,
 including a free one, are at [afrirate.statotec.com/pricing](https://afrirate.statotec.com/pricing).
 
 `GET https://mcp.afrirate.statotec.com/healthz` shows whether it is up and the server's own upstream

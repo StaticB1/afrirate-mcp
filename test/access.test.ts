@@ -16,6 +16,13 @@ test('an AfriRate key in Authorization is the caller key; anything else is not',
   assert.equal(callerKey(`Basic ${KEY}`), undefined);
 });
 
+test('the key may come on the URL as ?api_key=, for clients that cannot set headers', () => {
+  assert.equal(callerKey(undefined, new URLSearchParams(`api_key=${KEY}`)), KEY);
+  assert.equal(callerKey(undefined, new URLSearchParams('api_key=not-a-key')), undefined);
+  const other = `ar_${'1b'.repeat(16)}`;
+  assert.equal(callerKey(`Bearer ${other}`, new URLSearchParams(`api_key=${KEY}`)), other, 'the header wins');
+});
+
 test('only tools/call counts against the allowance', () => {
   assert.equal(countToolCalls({ method: 'initialize' }), 0);
   assert.equal(countToolCalls({ method: 'tools/list' }), 0);
