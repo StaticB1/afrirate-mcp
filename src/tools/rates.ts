@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uiMeta } from '../ui/register.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AfriRateClient } from '../afrirate.js';
 import { errorResult, rateLine, textResult } from '../format.js';
@@ -37,6 +38,7 @@ export function registerRateTools(server: McpServer, client: AfriRateClient): vo
         rates: z.array(rateShape),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
+      _meta: uiMeta('rates'),
     },
     async ({ country, base, quote }) => {
       if (!country && !(base && quote)) {

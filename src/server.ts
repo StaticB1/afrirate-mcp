@@ -7,6 +7,7 @@ import { registerIndicatorTools } from './tools/indicators.js';
 import { registerLookupTools } from './tools/lookups.js';
 import { registerRateTools } from './tools/rates.js';
 import { registerWatchTools } from './tools/watch.js';
+import { registerUiResources } from './ui/register.js';
 import type { WatchStore } from './watches.js';
 
 export const SERVER_NAME = 'afrirate';
@@ -47,6 +48,7 @@ export function createMcpServer(config: Config, client: AfriRateClient, store: W
   registerConvertTool(server, client);
   registerCorridorTool(server, client);
   registerWatchTools(server, client, store);
+  registerUiResources(server);
 
   return server;
 }

@@ -76,6 +76,10 @@
   @keyframes sweep { to { background-position: -200% 0; } }
 
   /* ---- cards ---- */
+  /* An MCP Apps view: the server's own HTML, in a sandbox on another origin. */
+  .viewbox { flex: 1 1 0; min-width: 0; animation: rise .35s ease-out both; }
+  .viewbox iframe { border: 0; width: 100%; height: 140px; display: block; background: transparent; color-scheme: dark; }
+  .viewbox .src { font-size: 12px; color: var(--muted); margin-top: 4px; letter-spacing: .02em; }
   .card {
     flex: 1 1 0; min-width: 0;
     background: var(--card); border: 1px solid var(--card-edge); border-radius: var(--radius);
@@ -322,13 +326,82 @@ function cardFor(call) {
   return `<div class="card">${head}${body}</div>`;
 }
 
+/* ------------------------------------------------------- MCP Apps host side */
+let SANDBOX = null;
+fetch('/api/config').then((r) => r.json()).then((c) => { SANDBOX = c.sandbox; });
+
+// Our palette, passed to views as the spec's standard style variables.
+const HOST_VARS = {
+  '--color-background-primary': '#10151d', '--color-background-secondary': '#18212d',
+  '--color-text-primary': '#f3f5f8', '--color-text-secondary': '#8b95a5', '--color-border-primary': '#1e2733',
+  '--color-text-info': '#2ec5f0', '--color-text-warning': '#ffb347', '--color-text-danger': '#ff6b6b',
+  '--color-text-success': '#4fd18b', '--font-sans': 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+};
+const mounted = [];
+function unmountViews() { while (mounted.length) mounted.pop()(); }
+
+function mountView(call, holder) {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+  frame.src = SANDBOX;
+  holder.prepend(frame);
+  const post = (m) => frame.contentWindow && frame.contentWindow.postMessage(Object.assign({ jsonrpc: '2.0' }, m), '*');
+  const onMessage = async (event) => {
+    if (event.source !== frame.contentWindow) return;
+    const m = event.data;
+    if (!m || m.jsonrpc !== '2.0') return;
+    const reply = (result) => post({ id: m.id, result });
+    const fail = (message) => post({ id: m.id, error: { code: -32000, message } });
+    switch (m.method) {
+      case 'ui/notifications/sandbox-proxy-ready': {
+        const html = await (await fetch('/api/view?uri=' + encodeURIComponent(call.view))).text();
+        post({ method: 'ui/notifications/sandbox-resource-ready', params: { html } });
+        break;
+      }
+      case 'ui/initialize':
+        reply({
+          protocolVersion: '2026-01-26',
+          hostInfo: { name: 'afrirate-alexa-simulator', version: '0.2.0' },
+          hostCapabilities: { serverTools: {} },
+          hostContext: {
+            theme: 'dark', displayMode: 'inline', availableDisplayModes: ['inline'], platform: 'web',
+            styles: { variables: HOST_VARS }, containerDimensions: { maxHeight: 420 },
+            toolInfo: { tool: { name: call.name } },
+          },
+        });
+        break;
+      case 'ui/notifications/initialized':
+        post({ method: 'ui/notifications/tool-input', params: { arguments: call.arguments } });
+        post({ method: 'ui/notifications/tool-result', params: call.result });
+        break;
+      case 'ui/notifications/size-changed':
+        if (m.params && m.params.height) frame.style.height = Math.min(m.params.height, 420) + 'px';
+        break;
+      case 'tools/call': {
+        const res = await fetch('/api/tool', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(m.params) });
+        const body = await res.json();
+        res.ok ? reply(body) : fail(body.error);
+        break;
+      }
+      case 'ping': reply({}); break;
+      default: if (m.id != null && m.method) fail('not supported: ' + m.method);
+    }
+  };
+  window.addEventListener('message', onMessage);
+  mounted.push(() => { post({ id: 'teardown', method: 'ui/resource-teardown', params: {} }); window.removeEventListener('message', onMessage); });
+}
+
 function render(heard, calls, reply) {
   const useful = calls.filter((c) => !['list_countries', 'list_currencies'].includes(c.name));
   const ok = useful.filter((c) => !c.error);
   const shown = (ok.length ? ok : useful).slice(-2);
+  unmountViews();
   $('stage').innerHTML =
     `<div class="heard">${heard ? `“${esc(heard)}”` : ''}</div>` +
-    `<div class="cards">${shown.map(cardFor).join('')}</div>`;
+    `<div class="cards">${shown.map((c, i) => c.view && SANDBOX
+      ? `<div class="viewbox" data-i="${i}"><div class="src">MCP App · <code>${esc(c.view)}</code> · served by the AfriRate MCP server</div></div>`
+      : cardFor(c)).join('')}</div>`;
+  for (const box of document.querySelectorAll('.viewbox')) mountView(shown[Number(box.dataset.i)], box);
   $('reply').textContent = reply || '';
   $('log').textContent = calls.length
     ? calls.map((c) => `→ ${c.name}(${JSON.stringify(c.arguments)})\n${c.output || c.error}`).join('\n\n')

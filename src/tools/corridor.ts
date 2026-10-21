@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uiMeta } from '../ui/register.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { AfriRateError, type AfriRateClient, type Rate } from '../afrirate.js';
 import { ageNote, errorResult, textResult, toNumber } from '../format.js';
@@ -120,6 +121,7 @@ export function registerCorridorTool(server: McpServer, client: AfriRateClient):
         errors: z.array(z.object({ target: z.string(), reason: z.string() })),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
+      _meta: uiMeta('corridor'),
     },
     async ({ base, quote, countries }) => {
       const b = base.toUpperCase();

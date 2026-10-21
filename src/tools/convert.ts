@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uiMeta } from '../ui/register.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AfriRateClient } from '../afrirate.js';
 import { ageDays, ageNote, errorResult, formatAmount, textResult } from '../format.js';
@@ -42,6 +43,7 @@ export function registerConvertTool(server: McpServer, client: AfriRateClient): 
         age_days: z.number().nullable(),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
+      _meta: uiMeta('rates'),
     },
     async ({ amount, from, to, country, source }) => {
       const base = from.toUpperCase();

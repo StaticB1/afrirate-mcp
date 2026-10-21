@@ -34,20 +34,48 @@ Running your own copy (below) needs an AfriRate API key.
 
 ### On a simulated Alexa+ device
 
-`demo/` is a smart-display simulator: a microphone, a speaker, a screen of cards, and a voice
-assistant behind it with this MCP server attached as a remote tool. The model chooses which MCP
-tools to call; every number on screen came back through one of those calls, and the card says
-which. It keeps a watchlist id the way a device remembers its owner, so **☀ New day** starts a
-fresh conversation that opens with `check_watches`.
+`demo/` is a smart-display simulator: a microphone, a speaker and a screen, and it is an **MCP
+Apps host**. It connects to this server with the official MCP client, offers the server's tools to
+a model as functions, and runs whatever the model calls. Each result is drawn by the view the tool
+names in `_meta.ui.resourceUri`: HTML served by this MCP server, loaded in a sandbox on a second
+origin, as the MCP Apps spec requires of a web host. The device keeps a watchlist id the way a
+device remembers its owner, so **☀ New day** starts a fresh conversation that opens with
+`check_watches`.
 
 ```sh
 OPENAI_API_KEY=sk-... npm run demo      # then open http://127.0.0.1:4173
 ```
 
-The assistant runs on OpenAI's Responses API, which connects to the MCP server itself over
-Streamable HTTP (`tools: [{ type: "mcp", server_url }]`). Speech in and out uses OpenAI's
-transcription and text-to-speech models. Set `MCP_URL` to point it at a local server instead of
-the hosted one. It binds to localhost because it holds your key.
+The model is OpenAI's `gpt-4.1-mini` through the Responses API. Speech in and out uses OpenAI's
+transcription and text-to-speech models. Set `MCP_URL` to point it at a local server instead of the
+hosted one. It binds to localhost because it holds your key.
+
+### MCP Apps: the server ships its own cards
+
+`convert`, `get_rate`, `compare_corridor` and the three watch tools declare MCP Apps views
+(extension `io.modelcontextprotocol/ui`, spec `2026-01-26`). In any host that renders MCP Apps,
+their results appear as interactive cards instead of text:
+
+| View | For | Interactive |
+| --- | --- | --- |
+| `ui://afrirate/rates` | `convert`, `get_rate` | **Swap** reverses a conversion by calling `convert` through the host |
+| `ui://afrirate/corridor` | `compare_corridor` | One bar per central bank, with the spread |
+| `ui://afrirate/watchlist` | `watch_rate`, `check_watches`, `remove_watch` | **Check watchlist** and **Remove** call the tools through the host |
+
+Each view is one self-contained HTML document with no external requests, so it runs under a host's
+strictest default CSP. It follows the host's theme through the spec's standard style variables and
+falls back to its own light and dark palettes. Hosts without MCP Apps still get the full text
+answer. We checked the views against the official host-side `AppBridge` from
+`@modelcontextprotocol/ext-apps`, which validates every message: handshake, size reports and tool
+calls from the buttons.
+
+### Agent Skill
+
+[`skills/african-money/SKILL.md`](skills/african-money/SKILL.md) is an
+[Agent Skill](https://agentskills.io) that teaches an agent the order to call these tools for four
+everyday questions: what a transfer home is worth, which central bank quotes a pair best, whether
+a price has kept up with inflation, and a morning brief from a watchlist. It also covers the
+honesty rules: dates, data age, single-source pairs and rate limits.
 
 ## Tools
 
@@ -63,6 +91,8 @@ the hosted one. It binds to localhost because it holds your key.
 | `watch_rate` | Remember a rate and a condition — above, below, or a % move — across conversations |
 | `check_watches` | What changed on a watchlist since it was set, and since the last check |
 | `remove_watch` | Drop one watch, or all of them |
+
+Six of these tools also render as interactive cards in hosts that support MCP Apps (see "MCP Apps" above).
 
 `convert`, `compare_corridor` and the watch tools are computed here — no AfriRate endpoint returns
 them.

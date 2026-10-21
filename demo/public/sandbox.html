@@ -1,0 +1,45 @@
+<!doctype html>
+<!--
+  MCP Apps sandbox proxy (spec 2026-01-26, "Sandbox proxy"). Served from a
+  different origin than the host page. It tells the host it is ready, takes
+  the view's HTML in ui/notifications/sandbox-resource-ready, loads it in an
+  inner iframe under a CSP that allows nothing external, and relays every
+  other message both ways.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>html, body { margin: 0; background: transparent; overflow: hidden; } iframe { border: 0; width: 100%; display: block; }</style>
+</head>
+<body>
+<script>
+let inner = null;
+const CSP = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; " +
+  "script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:\">";
+
+window.addEventListener('message', (event) => {
+  const m = event.data;
+  if (!m || m.jsonrpc !== '2.0') return;
+  if (event.source === window.parent) {
+    if (m.method === 'ui/notifications/sandbox-resource-ready') return load(m.params.html);
+    if (inner) inner.contentWindow.postMessage(m, '*');
+    return;
+  }
+  if (inner && event.source === inner.contentWindow) {
+    if (typeof m.method === 'string' && m.method.startsWith('ui/notifications/sandbox-')) return;
+    if (m.method === 'ui/notifications/size-changed' && m.params) inner.style.height = m.params.height + 'px';
+    window.parent.postMessage(m, '*');
+  }
+});
+
+function load(html) {
+  inner = document.createElement('iframe');
+  inner.setAttribute('sandbox', 'allow-scripts');
+  inner.srcdoc = /<head>/i.test(html) ? html.replace(/<head>/i, '<head>' + CSP) : CSP + html;
+  document.body.appendChild(inner);
+}
+
+window.parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} }, '*');
+</script>
+</body>
+</html>

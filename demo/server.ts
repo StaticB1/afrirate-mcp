@@ -1,12 +1,16 @@
 /**
- * A simulated Alexa+ device for AfriRate MCP.
+ * A simulated Alexa+ device for AfriRate MCP, and an MCP Apps host.
  *
  * The browser page (demo/public/index.html) is the device: a smart display
- * with a microphone, a speaker and a screen for cards. This server is the
- * voice service behind it. It hands each utterance to a model with the
- * AfriRate MCP server attached as a remote tool, so the model — not this
- * file — decides which MCP tools to call, and the MCP server is reached over
- * Streamable HTTP exactly as an Alexa+ integration would reach it.
+ * with a microphone, a speaker and a screen. This server is the voice service
+ * behind it and the device's MCP client. It connects to the AfriRate MCP
+ * server over Streamable HTTP, offers the server's tools to a model as
+ * functions, and runs whatever the model calls — so the model decides which
+ * tools to use, and this host holds every full CallToolResult. The page then
+ * renders each result in the view the tool names in `_meta.ui.resourceUri`:
+ * HTML the MCP server itself serves, loaded in a sandbox on a second origin as
+ * the MCP Apps spec (2026-01-26) requires of a web host. Buttons in a view
+ * call tools back through /api/tool.
  *
  * It holds an OpenAI key, so it binds to localhost and is meant to be run by
  * whoever is looking at it, with their own key:
@@ -20,6 +24,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 
 const OPENAI = 'https://api.openai.com/v1';
 const KEY = process.env.OPENAI_API_KEY;
@@ -28,7 +35,12 @@ const MODEL = process.env.DEMO_MODEL ?? 'gpt-4.1-mini';
 const VOICE = process.env.DEMO_VOICE ?? 'sage';
 const PORT = Number(process.env.DEMO_PORT ?? 4173);
 const HOST = process.env.DEMO_HOST ?? '127.0.0.1';
+// The sandbox must be a different origin from the page; 127.0.0.1 and
+// localhost are different origins to a browser.
+const SANDBOX_PORT = Number(process.env.DEMO_SANDBOX_PORT ?? PORT + 1);
+const SANDBOX_URL = `http://localhost:${SANDBOX_PORT}/sandbox.html`;
 const PUBLIC = join(fileURLToPath(new URL('.', import.meta.url)), 'public');
+const UI_MIME_TYPE = 'text/html;profile=mcp-app';
 
 if (!KEY) {
   console.error('OPENAI_API_KEY is not set. The demo needs it to run the voice assistant.');
@@ -63,9 +75,62 @@ function sessionInstructions(watchlist: string | null, newSession: boolean): str
     `and pass it as \`watchlist\` to watch_rate so new watches join the same list.${opener}`;
 }
 
-interface McpCall {
+// ---------------------------------------------------------------- MCP client
+
+const mcp = new Client(
+  { name: 'afrirate-alexa-simulator', version: '0.2.0' },
+  // Tell the server this host renders MCP Apps views.
+  { capabilities: { extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME_TYPE] } } } } as never,
+);
+await mcp.connect(new StreamableHTTPClientTransport(new URL(MCP_URL)));
+const tools: Tool[] = (await mcp.listTools()).tools;
+const toolByName = new Map(tools.map((t) => [t.name, t]));
+
+type UiMeta = { ui?: { resourceUri?: string; visibility?: string[] } };
+const viewOf = (t: Tool | undefined): string | null => (t?._meta as UiMeta | undefined)?.ui?.resourceUri ?? null;
+// Per the spec, a view may only call tools whose visibility includes "app" (the default).
+const appCallable = (t: Tool | undefined): boolean =>
+  !!t && ((t._meta as UiMeta | undefined)?.ui?.visibility ?? ['model', 'app']).includes('app');
+const modelTools = tools.filter((t) => ((t._meta as UiMeta | undefined)?.ui?.visibility ?? ['model']).includes('model'));
+
+const FUNCTIONS = modelTools.map((t) => ({
+  type: 'function',
+  name: t.name,
+  description: t.description ?? '',
+  parameters: t.inputSchema,
+  strict: false,
+}));
+
+const textOf = (r: CallToolResult): string =>
+  (r.content ?? []).map((c) => ('text' in c ? c.text : '')).join('\n');
+
+async function runTool(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
+  try {
+    return (await mcp.callTool({ name, arguments: args })) as CallToolResult;
+  } catch (err) {
+    return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true };
+  }
+}
+
+const views = new Map<string, string>();
+async function viewHtml(uri: string): Promise<string> {
+  if (!views.has(uri)) {
+    const { contents } = await mcp.readResource({ uri });
+    const c = contents[0] as { mimeType?: string; text?: string } | undefined;
+    if (!c?.text || c.mimeType !== UI_MIME_TYPE) throw new Error(`${uri} is not an MCP Apps view`);
+    views.set(uri, c.text);
+  }
+  return views.get(uri)!;
+}
+
+// ------------------------------------------------------------------- model
+
+interface HostCall {
   name: string;
-  arguments: unknown;
+  arguments: Record<string, unknown>;
+  result: CallToolResult;
+  /** The MCP Apps view the tool names, or null if it has none. */
+  view: string | null;
   output: string | null;
   error: string | null;
 }
@@ -74,72 +139,92 @@ interface ResponseItem {
   type: string;
   name?: string;
   arguments?: string;
-  output?: string | null;
-  error?: unknown;
+  call_id?: string;
   content?: { type: string; text?: string }[];
 }
 
-async function ask(text: string, previousId: string | null, watchlist: string | null) {
+async function responses(body: Record<string, unknown>) {
   const res = await fetch(`${OPENAI}/responses`, {
     method: 'POST',
     headers: { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json()) as { id?: string; output?: ResponseItem[]; error?: { message: string } };
+  if (!res.ok || !json.output) throw new Error(json.error?.message ?? `model request failed (${res.status})`);
+  return json as { id: string; output: ResponseItem[] };
+}
+
+/**
+ * One user turn: the model calls tools, this host runs them on the MCP server
+ * and hands back their text, until the model answers.
+ */
+async function ask(text: string, previousId: string | null, watchlist: string | null) {
+  const instructions = sessionInstructions(watchlist, previousId === null);
+  const calls: HostCall[] = [];
+  let input: unknown = text;
+  let previous = previousId;
+  let reply = '';
+
+  for (let round = 0; round < 8; round++) {
+    const body = await responses({
       model: MODEL,
-      instructions: sessionInstructions(watchlist, previousId === null),
-      input: text,
-      ...(previousId ? { previous_response_id: previousId } : {}),
-      tools: [{ type: 'mcp', server_label: 'afrirate', server_url: MCP_URL, require_approval: 'never' }],
+      instructions,
+      input,
+      ...(previous ? { previous_response_id: previous } : {}),
+      tools: FUNCTIONS,
       // One call at a time. Two watch_rate calls in parallel cannot share the
       // watchlist id the first one creates, so they would land in two lists.
       parallel_tool_calls: false,
       // Low, for a device: the same question should get the same answer.
       temperature: 0.2,
-    }),
-  });
-  const body = (await res.json()) as { id?: string; output?: ResponseItem[]; error?: { message: string } };
-  if (!res.ok || !body.output) throw new Error(body.error?.message ?? `model request failed (${res.status})`);
-
-  const calls: McpCall[] = body.output
-    .filter((item) => item.type === 'mcp_call')
-    .map((item) => {
-      let args: unknown = item.arguments;
-      try {
-        args = JSON.parse(item.arguments ?? '{}');
-      } catch {
-        // Keep the raw string; the card shows it as-is.
-      }
-      // A tool that answered isError comes back as a JSON-encoded
-      // mcp_tool_execution_error — in `error`, and in some responses in
-      // `output`. Unwrap it to the tool's own text.
-      const raw = item.error ?? (item.output?.startsWith('{"type":"mcp_tool_execution_error"') ? item.output : null);
-      let error: string | null = null;
-      if (raw) {
-        const str = typeof raw === 'string' ? raw : JSON.stringify(raw);
-        try {
-          const parsed = JSON.parse(str) as { content?: { text?: string }[] };
-          error = parsed.content?.map((c) => c.text ?? '').join('\n') || str;
-        } catch {
-          error = str;
-        }
-      }
-      return { name: item.name ?? '?', arguments: args, output: error ? null : (item.output ?? null), error };
     });
+    previous = body.id;
 
-  const reply = body.output
-    .filter((item) => item.type === 'message')
-    .flatMap((item) => item.content ?? [])
-    .map((c) => c.text ?? '')
-    .join(' ')
-    .trim();
+    const requested = body.output.filter((i) => i.type === 'function_call');
+    if (requested.length === 0) {
+      reply = body.output
+        .filter((i) => i.type === 'message')
+        .flatMap((i) => i.content ?? [])
+        .map((c) => c.text ?? '')
+        .join(' ')
+        .trim();
+      break;
+    }
+
+    const outputs = [];
+    for (const fc of requested) {
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(fc.arguments ?? '{}') as Record<string, unknown>;
+      } catch {
+        // The model sent malformed JSON; run with nothing and let the tool say what is missing.
+      }
+      const name = fc.name ?? '?';
+      const result = toolByName.has(name)
+        ? await runTool(name, args)
+        : ({ content: [{ type: 'text', text: `No tool called ${name}.` }], isError: true } as CallToolResult);
+      const out = textOf(result);
+      calls.push({
+        name,
+        arguments: args,
+        result,
+        view: viewOf(toolByName.get(name)),
+        output: result.isError ? null : out,
+        error: result.isError ? out : null,
+      });
+      outputs.push({ type: 'function_call_output', call_id: fc.call_id, output: (result.isError ? 'Tool error: ' : '') + out });
+    }
+    input = outputs;
+  }
 
   // A watchlist id can only come from a watch_rate the user asked for. Pick it
   // up so the page can keep it — that is the "device" remembering its owner.
   const created = calls
-    .filter((c) => c.name === 'watch_rate' && c.output)
-    .map((c) => /\bwl_[a-z2-9]{10}\b/.exec(c.output!)?.[0])
+    .filter((c) => c.name === 'watch_rate' && !c.result.isError)
+    .map((c) => (c.result.structuredContent as { watchlist?: string } | undefined)?.watchlist)
     .find(Boolean);
 
-  return { reply, calls, response_id: body.id ?? null, watchlist: created ?? watchlist };
+  return { reply, calls, response_id: previous, watchlist: created ?? watchlist };
 }
 
 async function speak(text: string, voice: string): Promise<ArrayBuffer> {
@@ -210,6 +295,28 @@ const server = createServer(async (req, res) => {
       return send(res, 200, await ask(text, previous_response_id ?? null, list));
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/config') {
+      return send(res, 200, { sandbox: SANDBOX_URL, mcp: MCP_URL });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/view') {
+      const uri = url.searchParams.get('uri') ?? '';
+      if (!uri.startsWith('ui://')) return send(res, 400, { error: 'uri must be a ui:// resource' });
+      const html = await viewHtml(uri);
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(html);
+    }
+
+    // A view calling a tool back through the host (spec: tools/call from the View).
+    if (req.method === 'POST' && url.pathname === '/api/tool') {
+      const { name, arguments: args } = JSON.parse((await readBody(req, 16_384)).toString()) as {
+        name?: string;
+        arguments?: Record<string, unknown>;
+      };
+      if (!name || !appCallable(toolByName.get(name))) return send(res, 403, { error: `views may not call ${name}` });
+      return send(res, 200, await runTool(name, args ?? {}));
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/tts') {
       const { text, voice } = JSON.parse((await readBody(req, 16_384)).toString()) as { text?: string; voice?: string };
       if (!text || text.length > 1000) return send(res, 400, { error: 'text must be 1–1000 characters' });
@@ -239,5 +346,18 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Alexa+ simulator for AfriRate MCP: http://${HOST}:${PORT}  (MCP: ${MCP_URL}, model: ${MODEL})`);
+  console.log(
+    `Alexa+ simulator for AfriRate MCP: http://${HOST}:${PORT}  (MCP: ${MCP_URL}, ${tools.length} tools, ` +
+      `${tools.filter((t) => viewOf(t)).length} with MCP Apps views, model: ${MODEL})`,
+  );
 });
+
+// The MCP Apps sandbox proxy, on its own origin. It serves one file.
+createServer(async (req, res) => {
+  if (req.method !== 'GET' || new URL(req.url ?? '/', 'http://x').pathname !== '/sandbox.html') {
+    res.writeHead(404).end();
+    return;
+  }
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  res.end(await readFile(join(PUBLIC, 'sandbox.html')));
+}).listen(SANDBOX_PORT, HOST);

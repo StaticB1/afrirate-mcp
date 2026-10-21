@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uiMeta } from '../ui/register.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { AfriRateError, type AfriRateClient } from '../afrirate.js';
 import { ageDays, ageNote, errorResult, textResult } from '../format.js';
@@ -109,6 +110,7 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
         watch_count: z.number(),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      _meta: uiMeta('watchlist'),
     },
     async ({ from, to, condition: kind, value, country, watchlist }) => {
       const base = from.toUpperCase();
@@ -238,6 +240,7 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
         unchecked: z.array(z.object({ id: z.string(), reason: z.string() })),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      _meta: uiMeta('watchlist'),
     },
     async ({ watchlist }) => {
       const list = await store.get(watchlist);
@@ -359,6 +362,7 @@ export function registerWatchTools(server: McpServer, client: AfriRateClient, st
       },
       outputSchema: { watchlist: z.string(), removed: z.array(z.string()), remaining: z.number() },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      _meta: uiMeta('watchlist'),
     },
     async ({ watchlist, watch_id }) => {
       const list = await store.get(watchlist);
