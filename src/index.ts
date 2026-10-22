@@ -11,6 +11,7 @@ const config = loadConfig();
 const client = new AfriRateClient(config);
 const store = new WatchStore(config.stateDir);
 const allowance = new FreeAllowance({ perMinute: config.freePerMinute, perDay: config.freePerDay });
+const PATH_KEY_RE = /^\/mcp\/(ar_[0-9a-f]{32})\/?$/;
 
 /** nginx sets X-Real-IP from the proxy-protocol address and overwrites any a client sends. */
 function clientIp(req: IncomingMessage): string {
@@ -83,6 +84,15 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse, url: URL): P
 
 const httpServer = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+
+  // `/mcp/<key>` is the same endpoint with the caller's key in the path, for
+  // connectors that may drop a query string. It is moved into `api_key` so
+  // callerKey() sees one form; nginx masks it in the access log.
+  const inPath = PATH_KEY_RE.exec(url.pathname);
+  if (inPath) {
+    url.searchParams.set('api_key', inPath[1]!);
+    url.pathname = '/mcp';
+  }
 
   if (url.pathname === '/mcp') {
     if (req.method === 'POST') {

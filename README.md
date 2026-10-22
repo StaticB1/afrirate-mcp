@@ -24,7 +24,7 @@ without a key, each IP address gets the AfriRate Free plan's volume, **10 tool c
 
 **For more, use your own AfriRate key.** Send it as `Authorization: Bearer ar_…`, or, for clients
 that cannot set headers (claude.ai and ChatGPT connectors), put it on the URL:
-`https://mcp.afrirate.statotec.com/mcp?api_key=ar_…`. The server answers on that key, so your plan's
+`https://mcp.afrirate.statotec.com/mcp?api_key=ar_…`, or in the path, `https://mcp.afrirate.statotec.com/mcp/ar_…`, if a client drops the query. The server answers on that key, so your plan's
 limits apply and the usage shows on your AfriRate account. A key on a URL ends up in logs, so use one
 you can revoke. Keys,
 including a free one, are at [afrirate.statotec.com/pricing](https://afrirate.statotec.com/pricing).
