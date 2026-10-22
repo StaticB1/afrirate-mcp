@@ -88,6 +88,15 @@ export class FreeAllowance {
   }
 }
 
+/** What a keyless caller is told when keyless access is off (AFRIRATE_MCP_KEYLESS=off). */
+export function keyRequiredMessage(): string {
+  return (
+    'This server needs an AfriRate API key. Get one at https://afrirate.statotec.com/signup ' +
+    '(the Free plan costs nothing), then connect with https://mcp.afrirate.statotec.com/mcp/<key>, ' +
+    'add ?api_key=<key> to the address, or send "Authorization: Bearer <key>".'
+  );
+}
+
 /** What a keyless caller is told when the allowance runs out: how to get more. */
 export function limitMessage(limits: Allowance, verdict: Extract<Verdict, { ok: false }>): string {
   const which =

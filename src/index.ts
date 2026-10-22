@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { callerKey, countToolCalls, FreeAllowance, limitMessage } from './access.js';
+import { callerKey, countToolCalls, FreeAllowance, keyRequiredMessage, limitMessage } from './access.js';
 import { AfriRateClient } from './afrirate.js';
 import { loadConfig } from './config.js';
 import { createMcpServer, SERVER_NAME, SERVER_VERSION } from './server.js';
@@ -53,9 +53,15 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse, url: URL): P
     // A fresh client and cache per request, so every upstream call is on their key.
     api = new AfriRateClient({ ...config, apiKey: key, keyOwner: 'caller' });
   } else {
+    const id = !Array.isArray(body) && typeof body === 'object' && body !== null ? (body as { id?: unknown }).id ?? null : null;
+    // Keyless callers may still connect and list tools, so a client can show
+    // what the server does; only tools/call needs a key when keyless is off.
+    if (config.keyless === 'off' && countToolCalls(body) > 0) {
+      json(res, 200, { jsonrpc: '2.0', error: { code: -32028, message: keyRequiredMessage() }, id });
+      return;
+    }
     const verdict = allowance.take(clientIp(req), countToolCalls(body));
     if (!verdict.ok) {
-      const id = !Array.isArray(body) && typeof body === 'object' && body !== null ? (body as { id?: unknown }).id ?? null : null;
       // 200 with a JSON-RPC error, not a bare 429: MCP clients show the message
       // to the model, and the message is what tells it how to get more.
       res.setHeader('retry-after', String(verdict.retryAfterSec));

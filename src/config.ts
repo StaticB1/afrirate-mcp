@@ -16,6 +16,13 @@ export interface Config {
    * so upstream errors can say "your key" rather than blaming this server.
    */
   keyOwner?: 'server' | 'caller';
+  /**
+   * Whether a caller without an AfriRate key may call tools: 'free' gives the
+   * allowance below per IP; 'off' refuses tools/call until they send a key
+   * (a Free-plan key is enough). Blessing's decision: 'off' once Devpost
+   * judging ends on 2026-11-20 (the submitted video says "no key needed").
+   */
+  keyless: 'free' | 'off';
   /** Keyless callers' allowance per IP, in tool calls. Defaults match AfriRate's Free plan. */
   freePerMinute: number;
   freePerDay: number;
@@ -59,8 +66,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (!Number.isInteger(value) || value < 0) throw new Error(`${name} must be a whole number, got '${env[name]}'`);
   }
 
+  const keyless = env.AFRIRATE_MCP_KEYLESS ?? 'free';
+  if (keyless !== 'free' && keyless !== 'off') {
+    throw new Error(`AFRIRATE_MCP_KEYLESS must be 'free' or 'off', got '${keyless}'`);
+  }
+
   return {
     apiBase: (env.AFRIRATE_API_BASE ?? DEFAULT_API_BASE).replace(/\/+$/, ''),
+    keyless,
     apiKey: env.AFRIRATE_MCP_API_KEY || undefined,
     keyOwner: 'server',
     freePerMinute,

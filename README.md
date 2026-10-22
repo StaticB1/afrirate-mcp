@@ -18,9 +18,11 @@ A hosted instance is running at:
 https://mcp.afrirate.statotec.com/mcp
 ```
 
-Point any MCP client that speaks Streamable HTTP at it. There is nothing to sign up for:
-without a key, each IP address gets the AfriRate Free plan's volume, **10 tool calls a minute and
-300 a day**. Setup messages such as `initialize` and `tools/list` are not counted.
+Point any MCP client that speaks Streamable HTTP at it. **Until 2026-11-20**, when Devpost judging
+ends, there is nothing to sign up for: without a key, each IP address gets the AfriRate Free plan's
+volume, **10 tool calls a minute and 300 a day**. Setup messages such as `initialize` and
+`tools/list` are not counted. **After that, calling a tool needs an AfriRate key**; a Free-plan key
+is enough. Connecting and listing tools still work without one.
 
 **For more, use your own AfriRate key.** Send it as `Authorization: Bearer ar_…`, or, for clients
 that cannot set headers (claude.ai and ChatGPT connectors), put it on the URL:
@@ -205,6 +207,8 @@ The API key this server holds is metered, and the tools are written to spend it 
 | `AFRIRATE_TIMEOUT_MS` | `10000` | Upstream request timeout |
 | `AFRIRATE_CACHE_TTL_MS` | `60000` | How long a rate response may be reused. `0` disables it. |
 | `AFRIRATE_STATE_DIR` | `./data` | Where watchlists are kept. `STATE_DIRECTORY` (set by systemd) also works |
+| `AFRIRATE_MCP_KEYLESS` | `free` | `free`: callers without a key get the allowance below. `off`: `tools/call` needs a key (JSON-RPC error -32028 says where to get one). |
+| `AFRIRATE_MCP_FREE_PER_MINUTE` / `_PER_DAY` | `10` / `300` | Keyless allowance per IP, in tool calls |
 
 The API key is held server-side and never appears in a response, a log line or this repo.
 
